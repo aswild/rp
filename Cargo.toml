@@ -1,0 +1,11 @@
+[package]
+name = "rp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4.1", features = ["cargo", "derive", "deprecated", "wrap_help"] }
+memchr = "2.5"
+regex = "1.7"
+thiserror = "1"
