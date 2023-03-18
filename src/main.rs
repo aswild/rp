@@ -70,7 +70,7 @@ fn do_replace_stdout<P: Pattern>(replacer: Replacer<P>, files: &[PathBuf]) -> an
 
 fn replace_one_inplace<P: Pattern>(replacer: &Replacer<P>, path: &Path) -> anyhow::Result<()> {
     // open input first to make sure that the file exists
-    let mut infile = BufReader::new(File::open(path).context("failed to open")?);
+    let infile = File::open(path).context("failed to open")?;
     let dir = match path.parent() {
         Some(dir) => {
             if dir.as_os_str().is_empty() {
@@ -85,15 +85,29 @@ fn replace_one_inplace<P: Pattern>(replacer: &Replacer<P>, path: &Path) -> anyho
         None => anyhow::bail!("unable to get parent directory"),
     };
 
+    // get input metadata, we'll need its permissions later
+    let infile_meta = infile.metadata().context("failed to get file metadata")?;
+    // now we can buffer the input
+    let mut infile = BufReader::new(infile);
+
     let mut outfile =
-        BufWriter::new(NamedTempFile::new_in(dir).context("failed to open output file")?);
+        BufWriter::new(NamedTempFile::new_in(dir).context("failed to open temporary output file")?);
     replacer.replace_stream(&mut infile, &mut outfile)?;
+
+    // Close the input first before we rename over it
+    drop(infile);
+
     // get the tempfile out of the BufWriter, this will flush the remaining buffer
     let outfile = outfile.into_inner().context("write error")?;
     // atomically rename to replace the file
-    outfile
+    let new_outfile = outfile
         .persist(path)
         .context("failed to save updated file")?;
+
+    // set the same permissions as the input
+    new_outfile
+        .set_permissions(infile_meta.permissions())
+        .context("failed to set permissions on udpated file")?;
 
     Ok(())
 }
