@@ -8,6 +8,8 @@ use tempfile::NamedTempFile;
 
 mod replace;
 use replace::{Pattern, ReplaceOptions, Replacer};
+mod unescape;
+use unescape::unescape_bytes;
 
 /// rp: A line-oriented stream replacer
 #[derive(Debug, Parser)]
@@ -19,6 +21,17 @@ struct Args {
     /// PATTERN and REPLACEMENT are literal strings, not regular expressions.
     #[arg(short = 'F', long)]
     fixed_strings: bool,
+
+    /// Enable escape-sequence interpretation in REPLACEMENT.
+    ///
+    /// We support the same set of escape sequences as Rust string literals. Additionally non-ASCII
+    /// hex escapes (e.g. \xFF) are supported. This works in regex or literal pattern mode.
+    ///
+    /// \\, \n, \r, \t - backslash, newline, carraige-return, and tab
+    /// \xHH - exactly two hex digits (uppercase or lowercase)
+    /// \u{UUUU} - between 1 and 6 hex digits of a unicode codepoint, will be encoded as UTF-8
+    #[arg(short, long, verbatim_doc_comment)]
+    escape: bool,
 
     /// Replace all occurrences on each line rather than just the first match.
     #[arg(short = 'g', long)]
@@ -146,8 +159,14 @@ fn run() -> anyhow::Result<()> {
         only_matches: args.only_matches,
     };
 
+    let replacement = if args.escape {
+        unescape_bytes(args.replacement.as_bytes())?
+    } else {
+        args.replacement.into_bytes()
+    };
+
     if args.fixed_strings {
-        let replacer = opts.build_literal(args.pattern, args.replacement);
+        let replacer = opts.build_literal(args.pattern, replacement);
         if args.in_place {
             do_replace_inplace(replacer, &files)
         } else {
@@ -155,7 +174,7 @@ fn run() -> anyhow::Result<()> {
         }
     } else {
         let replacer = opts
-            .build_regex(&args.pattern, args.replacement)
+            .build_regex(&args.pattern, replacement)
             .context("invalid pattern regex")?;
         if args.in_place {
             do_replace_inplace(replacer, &files)
