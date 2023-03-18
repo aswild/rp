@@ -1,12 +1,13 @@
 use std::fs::File;
-use std::io::{self, BufReader};
-use std::path::PathBuf;
+use std::io::{self, BufReader, BufWriter};
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use clap::Parser;
+use tempfile::NamedTempFile;
 
 mod replace;
-use replace::{Pattern, Replacer};
+use replace::{Pattern, ReplaceOptions, Replacer};
 
 /// rp: A line-oriented stream replacer
 #[derive(Debug, Parser)]
@@ -25,7 +26,7 @@ struct Args {
 
     /// Print only matching lines where at least one replacement occurred.
     #[arg(short = 'n', long)]
-    only_matching: bool,
+    only_matches: bool,
 
     /// The pattern (regex or literal string) to search for
     pattern: String,
@@ -67,6 +68,43 @@ fn do_replace_stdout<P: Pattern>(replacer: Replacer<P>, files: &[PathBuf]) -> an
     }
 }
 
+fn replace_one_inplace<P: Pattern>(replacer: &Replacer<P>, path: &Path) -> anyhow::Result<()> {
+    // open input first to make sure that the file exists
+    let mut infile = BufReader::new(File::open(path).context("failed to open")?);
+    let dir = match path.parent() {
+        Some(dir) => {
+            if dir.as_os_str().is_empty() {
+                Path::new(".")
+            } else if !dir.is_dir() {
+                // this shouldn't actually happen
+                anyhow::bail!("parent '{}' isn't a directory", dir.display())
+            } else {
+                dir
+            }
+        }
+        None => anyhow::bail!("unable to get parent directory"),
+    };
+
+    let mut outfile =
+        BufWriter::new(NamedTempFile::new_in(dir).context("failed to open output file")?);
+    replacer.replace_stream(&mut infile, &mut outfile)?;
+    // get the tempfile out of the BufWriter, this will flush the remaining buffer
+    let outfile = outfile.into_inner().context("write error")?;
+    // atomically rename to replace the file
+    outfile
+        .persist(path)
+        .context("failed to save updated file")?;
+
+    Ok(())
+}
+
+fn do_replace_inplace<P: Pattern>(replacer: Replacer<P>, files: &[PathBuf]) -> anyhow::Result<()> {
+    for file in files {
+        replace_one_inplace(&replacer, file).with_context(|| file.display().to_string())?;
+    }
+    Ok(())
+}
+
 fn run() -> anyhow::Result<()> {
     let args = Args::parse();
 
@@ -82,27 +120,33 @@ fn run() -> anyhow::Result<()> {
         .iter()
         .filter(|p| matches!(p.to_str(), Some("-")))
         .count();
+
     if stdin_arg_count > 1 {
         anyhow::bail!("stdin '-' argument specified more than once");
+    } else if args.in_place && stdin_arg_count > 0 {
+        anyhow::bail!("stdin can't be used with in-place replacement");
     }
 
-    if args.in_place {
-        anyhow::bail!("In-place replacement isn't implemented yet");
+    let opts = ReplaceOptions {
+        replace_all: args.replace_all,
+        only_matches: args.only_matches,
+    };
+
+    if args.fixed_strings {
+        let replacer = opts.build_literal(args.pattern, args.replacement);
+        if args.in_place {
+            do_replace_inplace(replacer, &files)
+        } else {
+            do_replace_stdout(replacer, &files)
+        }
     } else {
-        match args.fixed_strings {
-            true => do_replace_stdout(
-                Replacer::literal(args.pattern, args.replacement)
-                    .replace_all(args.replace_all)
-                    .print_only_matches(args.only_matching),
-                &files,
-            ),
-            false => do_replace_stdout(
-                Replacer::regex(&args.pattern, args.replacement)
-                    .context("invalid regex pattern")?
-                    .replace_all(args.replace_all)
-                    .print_only_matches(args.only_matching),
-                &files,
-            ),
+        let replacer = opts
+            .build_regex(&args.pattern, args.replacement)
+            .context("invalid pattern regex")?;
+        if args.in_place {
+            do_replace_inplace(replacer, &files)
+        } else {
+            do_replace_stdout(replacer, &files)
         }
     }
 }

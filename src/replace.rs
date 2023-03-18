@@ -89,8 +89,58 @@ impl Pattern for &[u8] {
 
 // can't be generic over AsRef<[u8]> so hard-code an impl for Vec
 impl Pattern for Vec<u8> {
+    #[inline]
     fn replace_into(&self, buf: &mut Vec<u8>, text: &[u8], rep: &[u8], all: bool) -> usize {
-        (&**self).replace_into(buf, text, rep, all)
+        self.as_slice().replace_into(buf, text, rep, all)
+    }
+}
+
+// same for String
+impl Pattern for String {
+    #[inline]
+    fn replace_into(&self, buf: &mut Vec<u8>, text: &[u8], rep: &[u8], all: bool) -> usize {
+        self.as_bytes().replace_into(buf, text, rep, all)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ReplaceOptions {
+    pub replace_all: bool,
+    pub only_matches: bool,
+}
+
+impl ReplaceOptions {
+    pub fn build<P, R>(&self, pattern: P, replacement: R) -> Replacer<P>
+    where
+        P: Pattern,
+        R: Into<Vec<u8>>,
+    {
+        Replacer {
+            pattern,
+            replacement: replacement.into(),
+            replace_all: self.replace_all,
+            only_matches: self.only_matches,
+        }
+    }
+
+    pub fn build_literal<P, R>(&self, pattern: P, replacement: R) -> Replacer<Vec<u8>>
+    where
+        P: Into<Vec<u8>>,
+        R: Into<Vec<u8>>,
+    {
+        self.build(pattern.into(), replacement)
+    }
+
+    pub fn build_regex<R>(
+        &self,
+        pattern: &str,
+        replacement: R,
+    ) -> Result<Replacer<Regex>, regex::Error>
+    where
+        R: Into<Vec<u8>>,
+    {
+        let re = RegexBuilder::new(pattern).multi_line(true).build()?;
+        Ok(self.build(re, replacement))
     }
 }
 
@@ -107,54 +157,7 @@ pub struct Replacer<P> {
     pattern: P,
     replacement: Vec<u8>,
     replace_all: bool,
-    print_only_matches: bool,
-}
-
-// Weird () trait here for constructors that return concrete types. Replacer must have a type
-// parameter, but this impl block can't be generic without causing confusion and unnecessary type
-// annotations for callers.
-impl Replacer<()> {
-    pub fn regex<R>(re: &str, replacement: R) -> Result<Replacer<Regex>, regex::Error>
-    where
-        R: Into<Vec<u8>>,
-    {
-        Ok(Replacer {
-            pattern: RegexBuilder::new(re).multi_line(true).build()?,
-            replacement: replacement.into(),
-            replace_all: false,
-            print_only_matches: false,
-        })
-    }
-
-    pub fn literal<P, R>(pattern: P, replacement: R) -> Replacer<Vec<u8>>
-    where
-        P: Into<Vec<u8>>,
-        R: Into<Vec<u8>>,
-    {
-        Replacer {
-            pattern: pattern.into(),
-            replacement: replacement.into(),
-            replace_all: false,
-            print_only_matches: false,
-        }
-    }
-}
-
-// builder methods are actually generic
-impl<P> Replacer<P> {
-    pub fn replace_all(self, replace_all: bool) -> Self {
-        Self {
-            replace_all,
-            ..self
-        }
-    }
-
-    pub fn print_only_matches(self, print_only_matches: bool) -> Self {
-        Self {
-            print_only_matches,
-            ..self
-        }
-    }
+    only_matches: bool,
 }
 
 // and pattern related methods are generic over Patterns only
@@ -168,7 +171,7 @@ impl<P: Pattern> Replacer<P> {
             pattern,
             replacement: replacement.into(),
             replace_all: false,
-            print_only_matches: false,
+            only_matches: false,
         }
     }
 
@@ -196,7 +199,7 @@ impl<P: Pattern> Replacer<P> {
                     .replace_into(&mut repbuf, &buf, &self.replacement, self.replace_all);
 
             // write the output (maybe)
-            if !self.print_only_matches || rep_count != 0 {
+            if !self.only_matches || rep_count != 0 {
                 output.write_all(&repbuf).map_err(StreamIOError::Write)?;
             }
         }

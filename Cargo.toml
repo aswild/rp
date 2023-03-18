@@ -8,4 +8,5 @@ anyhow = "1"
 clap = { version = "4.1", features = ["cargo", "derive", "deprecated", "wrap_help"] }
 memchr = "2.5"
 regex = "1.7"
+tempfile = "3.4"
 thiserror = "1"
