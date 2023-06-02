@@ -13,6 +13,12 @@ use unescape::unescape_bytes;
 
 /// rp: A line-oriented stream replacer
 #[derive(Debug, Parser)]
+#[command(
+    // enable custom styles
+    styles = clap_styles(),
+    // don't style the usage string, it looks ugly
+    override_usage = "rp [OPTIONS] PATTERN REPLACEMENT [FILES]...",
+)]
 struct Args {
     /// Modify files in-place rather than printing to stdout
     #[arg(short, long, requires = "files")]
@@ -57,6 +63,22 @@ struct Args {
 
     /// List of input files. Omit or use '-' for stdin.
     files: Vec<PathBuf>,
+}
+
+/// Get the set of text styles to use in clap help/error text.
+fn clap_styles() -> clap::builder::Styles {
+    use anstyle::{AnsiColor, Style};
+
+    // used for help section headings; bright white like clap 4 but not underlined
+    let header = Style::new().fg_color(Some(AnsiColor::BrightWhite.into()));
+    // use for option and argument names; green like clap 3
+    let value = Style::new().fg_color(Some(AnsiColor::Green.into()));
+
+    clap::builder::Styles::styled()
+        .header(header)
+        .usage(header)
+        .literal(value)
+        .placeholder(value)
 }
 
 fn do_replace_stdout<P: Pattern>(replacer: Replacer<P>, files: &[PathBuf]) -> anyhow::Result<()> {
