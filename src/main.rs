@@ -22,6 +22,10 @@ struct Args {
     #[arg(short = 'F', long)]
     fixed_strings: bool,
 
+    /// Case-insensitive search (regex mode only).
+    #[arg(short = 'I', long, conflicts_with = "fixed_strings")]
+    ignore_case: bool,
+
     /// Enable escape-sequence interpretation in REPLACEMENT.
     ///
     /// We support the same set of escape sequences as Rust string literals. Additionally non-ASCII
@@ -174,7 +178,7 @@ fn run() -> anyhow::Result<()> {
         }
     } else {
         let replacer = opts
-            .build_regex(&args.pattern, replacement)
+            .build_regex(&args.pattern, replacement, args.ignore_case)
             .context("invalid pattern regex")?;
         if args.in_place {
             do_replace_inplace(replacer, &files)

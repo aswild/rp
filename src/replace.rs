@@ -135,11 +135,15 @@ impl ReplaceOptions {
         &self,
         pattern: &str,
         replacement: R,
+        ignore_case: bool,
     ) -> Result<Replacer<Regex>, regex::Error>
     where
         R: Into<Vec<u8>>,
     {
-        let re = RegexBuilder::new(pattern).multi_line(true).build()?;
+        let re = RegexBuilder::new(pattern)
+            .multi_line(true)
+            .case_insensitive(ignore_case)
+            .build()?;
         Ok(self.build(re, replacement))
     }
 }
