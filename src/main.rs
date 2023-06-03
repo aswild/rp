@@ -14,6 +14,8 @@ use unescape::unescape_bytes;
 /// rp: A line-oriented stream replacer
 #[derive(Debug, Parser)]
 #[command(
+    // lol why isn't this the default
+    version,
     // enable custom styles
     styles = clap_styles(),
     // don't style the usage string, it looks ugly
@@ -69,9 +71,9 @@ struct Args {
 fn clap_styles() -> clap::builder::Styles {
     use anstyle::{AnsiColor, Style};
 
-    // used for help section headings; bright white like clap 4 but not underlined
+    // help section headings; bright white like clap 4 but not underlined
     let header = Style::new().fg_color(Some(AnsiColor::BrightWhite.into()));
-    // use for option and argument names; green like clap 3
+    // option and argument names; green like clap 3
     let value = Style::new().fg_color(Some(AnsiColor::Green.into()));
 
     clap::builder::Styles::styled()
