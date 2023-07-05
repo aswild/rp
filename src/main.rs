@@ -97,8 +97,11 @@ fn do_replace_stdout<P: Pattern>(replacer: Replacer<P>, files: &[PathBuf]) -> an
         };
 
         if let Err(err) = ret {
-            eprintln!("Error on '{}': {}", path.display(), err);
-            failed = true;
+            // Ignore EPIPE, that's somewhat common when paging output
+            if !err.is_broken_pipe() {
+                eprintln!("Error on '{}': {}", path.display(), err);
+                failed = true;
+            }
         }
     }
 

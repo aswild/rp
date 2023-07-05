@@ -156,6 +156,16 @@ pub enum StreamIOError {
     Write(#[source] io::Error),
 }
 
+impl StreamIOError {
+    /// Returns true if this is a write error caused by a broken pipe (EPIPE).
+    pub fn is_broken_pipe(&self) -> bool {
+        match self {
+            StreamIOError::Read(_) => false,
+            StreamIOError::Write(err) => err.kind() == io::ErrorKind::BrokenPipe,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Replacer<P> {
     pattern: P,
